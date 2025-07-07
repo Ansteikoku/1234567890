@@ -2,220 +2,165 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>６ちゃんねる</title>
+  <title>６ちゃんねる - スレッド詳細</title>
   <style>
     body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
-    .thread { padding: 10px; background: #fff; margin: 10px 0; border: 1px solid #ccc; }
-    #board-tabs button { margin: 0 5px; }
-    #user-area { margin-bottom: 10px; }
-    input[type="file"] { margin-top: 10px; }
-    /* モーダル用のスタイル */
-    .modal {
-      display: none; 
-      position: fixed; 
-      z-index: 1; 
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-      background-color: rgba(0,0,0,0.8);
-    }
-    .modal-content {
-      margin: auto;
-      display: block;
-      width: 80%;
-      max-width: 700px;
-    }
-    .modal-content:hover {
-      cursor: pointer;
-    }
+    #thread-title { font-weight: bold; font-size: 1.5em; margin-bottom: 10px; }
+    #thread-body { margin-bottom: 20px; }
+    #comments { background: #fff; padding: 10px; border: 1px solid #ccc; max-height: 400px; overflow-y: auto; }
+    .comment { border-bottom: 1px solid #ddd; padding: 5px 0; }
+    .comment:last-child { border-bottom: none; }
+    #comment-form textarea { width: 100%; height: 80px; }
+    button#load-comments-btn { margin-bottom: 10px; }
   </style>
 </head>
 <body>
-  <h1>６ちゃんねる</h1>
-  <div id="user-area">
-    <span id="login-status">未ログイン</span>
-    <input type="password" id="user-password" placeholder="パスワード" />
-    <button id="user-login-btn">ログイン</button>
-    <button id="user-logout-btn" style="display:none;">ログアウト</button>
-  </div>
-  <div id="board-tabs">読み込み中...</div>
-  <div id="threads"></div>
+  <h1 id="thread-title">読み込み中...</h1>
+  <div id="thread-body"></div>
 
-  <h2>スレッド作成</h2>
-  <form id="thread-form">
-    <input type="text" id="title" placeholder="タイトル" required /><br />
-    <textarea id="body" placeholder="本文" required></textarea><br />
-    <input type="text" id="name" placeholder="名前（省略可）" /><br />
-    <input type="password" id="password" placeholder="削除用パスワード" required /><br />
-    <input type="file" id="thread-image" accept="image/*" /><br />
-    <button type="submit">作成</button>
+  <h2>コメント一覧</h2>
+  <button id="load-comments-btn">📥 コメントを読み込む</button>
+  <div id="comments">コメントを読み込み中...</div>
+
+  <h3>コメント投稿</h3>
+  <form id="comment-form">
+    <input type="text" id="comment-name" placeholder="名前（省略可）" /><br />
+    <textarea id="comment-body" placeholder="コメント本文" required></textarea><br />
+    <button type="submit">コメント投稿</button>
   </form>
-
-  <!-- モーダル画像表示 -->
-  <div id="imgModal" class="modal">
-    <span id="close-modal" style="color: white; font-size: 30px; cursor: pointer; position: absolute; top: 10px; right: 25px;">×</span>
-    <img id="modal-img" class="modal-content" />
-  </div>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
     const supabase = createClient(
       "https://vpvvdkbkghyfiflkidno.supabase.co",
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwdnZka2JrZ2h5ZmlmbGtpZG5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1ODExNTcsImV4cCI6MjA2NzE1NzE1N30.bGHEpq0Z9XCSY8SJE7-aGQpLA4axBDH4J4hCxyakbLg"
     );
 
-    let currentBoard = null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const threadId = urlParams.get('id');
 
-    function updateLoginStatus() {
-      const isAdmin = localStorage.getItem("isAdmin") === "true";
-      const isUser = localStorage.getItem("isUser") === "true";
-      const loginStatus = document.getElementById("login-status");
-      if (isAdmin) loginStatus.textContent = "管理者ログイン中";
-      else if (isUser) loginStatus.textContent = "ログイン中";
-      else loginStatus.textContent = "未ログイン";
+    const threadTitleEl = document.getElementById('thread-title');
+    const threadBodyEl = document.getElementById('thread-body');
+    const commentsEl = document.getElementById('comments');
+    const commentForm = document.getElementById('comment-form');
 
-      document.getElementById("user-login-btn").style.display = isAdmin || isUser ? "none" : "inline-block";
-      document.getElementById("user-password").style.display = isAdmin || isUser ? "none" : "inline-block";
-      document.getElementById("user-logout-btn").style.display = isAdmin || isUser ? "inline-block" : "none";
+    if (!threadId) {
+      threadTitleEl.textContent = 'スレッドIDが指定されていません';
+      throw new Error('No thread id');
     }
 
-    document.getElementById("user-login-btn").onclick = () => {
-      const pw = document.getElementById("user-password").value;
-      if (pw === "wakakusanagisa") {
-        localStorage.setItem("isAdmin", "true");
-        alert("管理者としてログインしました");
-      } else if (pw === "wakakusa") {
-        localStorage.setItem("isUser", "true");
-        alert("通常ユーザーとしてログインしました");
-      } else {
-        alert("パスワードが間違っています");
-        return;
-      }
-      updateLoginStatus();
-    };
-
-    document.getElementById("user-logout-btn").onclick = () => {
-      localStorage.removeItem("isAdmin");
-      localStorage.removeItem("isUser");
-      alert("ログアウトしました");
-      updateLoginStatus();
-    };
-
-    async function loadBoards() {
-      const tabEl = document.getElementById("board-tabs");
-      const { data, error } = await supabase.from("boards").select("*");
-      if (error || !data) {
-        tabEl.textContent = "板情報の読み込み失敗";
-        return;
-      }
-      tabEl.innerHTML = '';
-      data.forEach(board => {
-        const btn = document.createElement("button");
-        btn.textContent = board.name;
-        btn.onclick = () => {
-          currentBoard = board.slug;
-          loadThreads();
-        };
-        tabEl.appendChild(btn);
-      });
-      if (data.length > 0) {
-        currentBoard = data[0].slug;
-        loadThreads();
-      }
-    }
-
-    async function loadThreads() {
+    async function loadThread() {
       const { data, error } = await supabase
-        .from("threads")
-        .select("*")
-        .eq("board_slug", currentBoard)
-        .order("created_at", { ascending: false });
+        .from('threads')
+        .select('*')
+        .eq('id', threadId)
+        .single();
 
-      const container = document.getElementById("threads");
-      container.innerHTML = "";
-      if (data) {
-        data.forEach(thr => {
-          const div = document.createElement("div");
-          div.className = "thread";
-          div.innerHTML = `<a href="thread.html?id=${thr.id}">${thr.title}</a><br>${thr.body}`;
-          container.appendChild(div);
-        });
-      }
-    }
-
-    document.getElementById("thread-form").addEventListener("submit", async (e) => {
-      if (!(localStorage.getItem("isUser") === "true" || localStorage.getItem("isAdmin") === "true")) {
-        alert("ログインが必要です。先にログインしてください。");
+      if (error || !data) {
+        threadTitleEl.textContent = 'スレッドが見つかりません';
+        console.error(error);
         return;
       }
-      e.preventDefault();
-      const title = document.getElementById("title").value;
-      const body = document.getElementById("body").value;
-      const name = document.getElementById("name").value || "名無しさん";
-      const password = document.getElementById("password").value;
-      const imageFile = document.getElementById("thread-image").files[0];
 
-      let imageUrl = null;
-      if (imageFile) {
-        if (imageFile.size > 2 * 1024 * 1024) {
-          alert("画像は2MB以内にしてください。");
-          return;
-        }
+      threadTitleEl.textContent = data.title;
+      threadBodyEl.textContent = data.body;
+    }
 
-        const ext = imageFile.name.split(".").pop();
-        const fileName = `${Date.now()}.${ext}`;
-        try {
-          const { error: uploadErr } = await supabase.storage
-            .from("post-images")
-            .upload(fileName, imageFile);
+    async function loadComments() {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: true });
 
-          if (uploadErr) {
-            console.error("画像アップロードエラー:", uploadErr);
-            alert("画像のアップロードに失敗しました。詳細: " + uploadErr.message);
-            return;
-          }
-
-          const { data: publicUrlData } = supabase.storage
-            .from("post-images")
-            .getPublicUrl(fileName);
-
-          imageUrl = publicUrlData.publicUrl;
-        } catch (err) {
-          console.error("アップロード処理エラー:", err);
-          alert("画像のアップロード中にエラーが発生しました。詳細: " + err.message);
-          return;
-        }
+      if (error) {
+        commentsEl.textContent = 'コメントの読み込みに失敗しました';
+        console.error(error);
+        return;
       }
 
-      const { error } = await supabase.from("threads").insert({
-        board_slug: currentBoard,
-        title, body, name, password, image_url: imageUrl
+      if (!data || data.length === 0) {
+        commentsEl.textContent = 'コメントはまだありません';
+        return;
+      }
+
+      commentsEl.innerHTML = '';
+      data.forEach(comment => {
+        const div = document.createElement('div');
+        div.className = 'comment';
+        const name = comment.name || '名無しさん';
+        const time = new Date(comment.created_at).toLocaleString();
+        div.innerHTML = `
+          <strong>${name}</strong> <small>${time}</small><br>
+          <pre style="white-space: pre-wrap;">${escapeHtml(comment.body)}</pre>
+        `;
+        commentsEl.appendChild(div);
       });
-      if (error) return alert("スレッド作成に失敗");
-      e.target.reset();
-      loadThreads();
-    });
+    }
 
-    // 画像クリックで拡大表示
-    const modal = document.getElementById("imgModal");
-    const modalImg = document.getElementById("modal-img");
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
 
-    document.body.addEventListener("click", (event) => {
-      if (event.target.classList.contains("comment-img")) {
-        modal.style.display = "block";
-        modalImg.src = event.target.src;
+    function appendComment(comment) {
+      if (!comment) return;
+      const div = document.createElement('div');
+      div.className = 'comment';
+      const name = comment.name || '名無しさん';
+      const time = new Date(comment.created_at).toLocaleString();
+      div.innerHTML = `
+        <strong>${name}</strong> <small>${time}</small><br>
+        <pre style="white-space: pre-wrap;">${escapeHtml(comment.body)}</pre>
+      `;
+      commentsEl.appendChild(div);
+      commentsEl.scrollTop = commentsEl.scrollHeight;
+    }
+
+    commentForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('comment-name').value || '名無しさん';
+      const body = document.getElementById('comment-body').value.trim();
+
+      if (!body) return alert('コメントを入力してください');
+
+      const { error } = await supabase.from('comments').insert([{
+        thread_id: threadId,
+        name,
+        body
+      }]);
+
+      if (error) {
+        alert('コメント投稿に失敗しました');
+        console.error(error);
+        return;
       }
+
+      commentForm.reset();
+      await loadComments();
     });
 
-    // モーダルを閉じる
-    document.getElementById("close-modal").onclick = () => {
-      modal.style.display = "none";
-    };
+    document.getElementById('load-comments-btn').addEventListener('click', loadComments);
 
-    loadBoards();
-    updateLoginStatus();
+    function subscribeComments() {
+      supabase
+        .channel('public:comments')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'comments', filter: `thread_id=eq.${threadId}` },
+          payload => appendComment(payload.new)
+        )
+        .subscribe();
+    }
+
+    loadThread();
+    loadComments();
+    subscribeComments();
   </script>
 </body>
 </html>
