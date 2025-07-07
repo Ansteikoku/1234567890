@@ -2,37 +2,31 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>スレッド</title>
+  <title>６ちゃんねる - スレッド詳細</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
-    .comment { border: 1px solid #ccc; background: #fff; padding: 10px; margin: 10px 0; }
-    img.comment-img { max-width: 200px; display: block; margin-top: 5px; cursor: pointer; }
-    button { margin-top: 10px; padding: 5px 10px; font-size: 14px; cursor: pointer; }
+    body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
+    #thread-title { font-weight: bold; font-size: 1.5em; margin-bottom: 10px; }
+    #thread-body { margin-bottom: 20px; }
+    #comments { background: #fff; padding: 10px; border: 1px solid #ccc; max-height: 400px; overflow-y: auto; }
+    .comment { border-bottom: 1px solid #ddd; padding: 5px 0; }
+    .comment:last-child { border-bottom: none; }
+    #comment-form textarea { width: 100%; height: 80px; }
   </style>
 </head>
 <body>
-  <h1 id="thread-title">スレッド</h1>
+  <h1 id="thread-title">読み込み中...</h1>
   <div id="thread-body"></div>
 
-  <!-- 読み込みボタン -->
-  <button id="load-thread-btn">スレッドを読み込む</button>
-
-  <h2>コメントを投稿</h2>
-  <form id="comment-form">
-    <input type="text" id="name" placeholder="名前（省略可）" /><br />
-    <textarea id="body" placeholder="本文" required></textarea><br />
-    <input type="file" id="image" accept="image/*" /><br />
-    <input type="password" id="password" placeholder="削除用パスワード" required /><br />
-    <button type="submit">投稿</button>
-  </form>
-
-  <audio id="se" src="se.mp3" preload="auto"></audio>
-
   <h2>コメント一覧</h2>
-  <div id="comments"></div>
+  <div id="comments">コメントを読み込み中...</div>
 
-  <!-- コメント読み込みボタン -->
-  <button id="load-comments-btn">コメントを読み込む</button>
+  <h3>コメント投稿</h3>
+  <form id="comment-form">
+    <input type="text" id="comment-name" placeholder="名前（省略可）" /><br />
+    <textarea id="comment-body" placeholder="コメント本文" required></textarea><br />
+    <input type="password" id="comment-password" placeholder="削除用パスワード" required /><br />
+    <button type="submit">コメント投稿</button>
+  </form>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
@@ -42,121 +36,150 @@
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwdnZka2JrZ2h5ZmlmbGtpZG5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1ODExNTcsImV4cCI6MjA2NzE1NzE1N30.bGHEpq0Z9XCSY8SJE7-aGQpLA4axBDH4J4hCxyakbLg"
     );
 
-    const url = new URL(location.href);
-    const threadId = url.searchParams.get("id");
+    // URLからクエリパラメータのidを取得
+    const urlParams = new URLSearchParams(window.location.search);
+    const threadId = urlParams.get('id');
 
-    // スレッドを読み込む関数
+    const threadTitleEl = document.getElementById('thread-title');
+    const threadBodyEl = document.getElementById('thread-body');
+    const commentsEl = document.getElementById('comments');
+    const commentForm = document.getElementById('comment-form');
+
+    if (!threadId) {
+      threadTitleEl.textContent = 'スレッドIDが指定されていません';
+      throw new Error('No thread id');
+    }
+
+    // スレッド情報を読み込み表示
     async function loadThread() {
       const { data, error } = await supabase
-        .from("threads")
-        .select("*")
-        .eq("id", threadId)
+        .from('threads')
+        .select('*')
+        .eq('id', threadId)
         .single();
-      if (data) {
-        document.getElementById("thread-title").textContent = data.title;
-        document.getElementById("thread-body").innerHTML = data.body;
-      } else {
-        alert("スレッドの読み込みに失敗しました");
+
+      if (error || !data) {
+        threadTitleEl.textContent = 'スレッドが見つかりません';
+        console.error(error);
+        return;
       }
+
+      threadTitleEl.textContent = data.title;
+      threadBodyEl.textContent = data.body;
     }
 
-    // コメントを読み込む関数
+    // コメント一覧を読み込み表示
     async function loadComments() {
       const { data, error } = await supabase
-        .from("comments")
-        .select("*")
-        .eq("thread_id", threadId)
-        .order("created_at", { ascending: true });
-
-      const container = document.getElementById("comments");
-      container.innerHTML = "";
+        .from('comments')
+        .select('*')
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: true });
 
       if (error) {
-        alert("コメントの読み込みに失敗しました");
+        commentsEl.textContent = 'コメントの読み込みに失敗しました';
+        console.error(error);
         return;
       }
 
-      data.forEach((cmt, idx) => {
-        const div = document.createElement("div");
-        div.className = "comment";
-        div.innerHTML = `<b>${cmt.name || "名無しさん"}：#${idx + 1}</b><br>${cmt.body}`;
+      if (!data || data.length === 0) {
+        commentsEl.textContent = 'コメントはまだありません';
+        return;
+      }
 
-        if (cmt.image_url) {
-          const img = document.createElement("img");
-          img.src = cmt.image_url;
-          img.className = "comment-img";
-          img.onclick = () => window.open(cmt.image_url, "_blank");
-          div.appendChild(img);
-        }
-
-        if (localStorage.getItem("isAdmin") === "true") {
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "削除";
-          delBtn.onclick = async () => {
-            if (confirm("このコメントを削除しますか？")) {
-              await supabase.from("comments").delete().eq("id", cmt.id);
-              alert("削除しました");
-              loadComments();
-            }
-          };
-          div.appendChild(delBtn);
-        }
-
-        container.appendChild(div);
+      commentsEl.innerHTML = '';
+      data.forEach(comment => {
+        const div = document.createElement('div');
+        div.className = 'comment';
+        const name = comment.name || '名無しさん';
+        const time = new Date(comment.created_at).toLocaleString();
+        div.innerHTML = `
+          <strong>${name}</strong> <small>${time}</small><br>
+          <pre style="white-space: pre-wrap;">${escapeHtml(comment.body)}</pre>
+        `;
+        commentsEl.appendChild(div);
       });
     }
 
-    // コメント投稿フォーム
-    document.getElementById("comment-form").addEventListener("submit", async (e) => {
+    // HTMLエスケープ関数
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // 新しいコメントだけをDOMに追加（リアルタイム用）
+    function appendComment(comment) {
+      if (!comment) return;
+      const div = document.createElement('div');
+      div.className = 'comment';
+      const name = comment.name || '名無しさん';
+      const time = new Date(comment.created_at).toLocaleString();
+      div.innerHTML = `
+        <strong>${name}</strong> <small>${time}</small><br>
+        <pre style="white-space: pre-wrap;">${escapeHtml(comment.body)}</pre>
+      `;
+      commentsEl.appendChild(div);
+      commentsEl.scrollTop = commentsEl.scrollHeight; // 下までスクロール
+    }
+
+    // コメントフォーム送信
+    commentForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name = document.getElementById("name").value;
-      const body = document.getElementById("body").value;
-      const password = document.getElementById("password").value;
-      const imageFile = document.getElementById("image").files[0];
+      const name = document.getElementById('comment-name').value || '名無しさん';
+      const body = document.getElementById('comment-body').value.trim();
+      const password = document.getElementById('comment-password').value;
 
-      let imageUrl = null;
-      if (imageFile) {
-        if (imageFile.size > 2 * 1024 * 1024) {
-          alert("画像は2MB以内にしてください。");
-          return;
-        }
-        const ext = imageFile.name.split(".").pop();
-        const fileName = `${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from("post-images")
-          .upload(fileName, imageFile);
-        if (uploadErr) {
-          alert("画像のアップロードに失敗しました");
-          return;
-        }
-        const { data: publicUrlData } = supabase.storage
-          .from("post-images")
-          .getPublicUrl(fileName);
-        imageUrl = publicUrlData.publicUrl;
+      if (!body) {
+        alert('コメントを入力してください');
+        return;
       }
-
-      const { error } = await supabase.from("comments").insert({
-        thread_id: threadId,
-        body,
-        name,
-        password,
-        image_url: imageUrl,
-      });
-
-      if (error) {
-        alert("投稿に失敗しました");
+      if (!password) {
+        alert('削除用パスワードを入力してください');
         return;
       }
 
-      document.getElementById("se").play();
-      document.getElementById("comment-form").reset();
-      loadComments();
-      window.scrollTo(0, document.body.scrollHeight);
+      const { error } = await supabase.from('comments').insert([{
+        thread_id: threadId,
+        name,
+        body,
+        password
+      }]);
+
+      if (error) {
+        alert('コメント投稿に失敗しました');
+        console.error(error);
+        return;
+      }
+
+      // 投稿成功したらフォームクリア
+      commentForm.reset();
+      // コメントを再読み込み（即時反映用）
+      await loadComments();
     });
 
-    // 読み込みボタンにイベントを追加
-    document.getElementById("load-thread-btn").addEventListener("click", loadThread);
-    document.getElementById("load-comments-btn").addEventListener("click", loadComments);
+    // リアルタイム監視して新規コメントを即時表示
+    function subscribeComments() {
+      supabase
+        .channel('public:comments')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'comments', filter: `thread_id=eq.${threadId}` },
+          payload => {
+            const newComment = payload.new;
+            appendComment(newComment);
+          }
+        )
+        .subscribe();
+    }
+
+    // 初期ロード
+    loadThread();
+    loadComments();
+    subscribeComments();
 
   </script>
 </body>
