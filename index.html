@@ -9,27 +9,6 @@
     #board-tabs button { margin: 0 5px; }
     #user-area { margin-bottom: 10px; }
     input[type="file"] { margin-top: 10px; }
-    /* モーダル用のスタイル */
-    .modal {
-      display: none; 
-      position: fixed; 
-      z-index: 1; 
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-      background-color: rgba(0,0,0,0.8);
-    }
-    .modal-content {
-      margin: auto;
-      display: block;
-      width: 80%;
-      max-width: 700px;
-    }
-    .modal-content:hover {
-      cursor: pointer;
-    }
   </style>
 </head>
 <body>
@@ -53,14 +32,139 @@
     <button type="submit">作成</button>
   </form>
 
-  <!-- モーダル画像表示 -->
-  <div id="imgModal" class="modal">
-    <span id="close-modal" style="color: white; font-size: 30px; cursor: pointer; position: absolute; top: 10px; right: 25px;">×</span>
-    <img id="modal-img" class="modal-content" />
-  </div>
-
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
     const supabase = createClient(
       "https://vpvvdkbkghyfiflkidno.supabase.co",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwdnZka2JrZ2h5ZmlmbGtp
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwdnZka2JrZ2h5ZmlmbGtpZG5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1ODExNTcsImV4cCI6MjA2NzE1NzE1N30.bGHEpq0Z9XCSY8SJE7-aGQpLA4axBDH4J4hCxyakbLg"
+    );
+
+    let currentBoard = null;
+
+    function updateLoginStatus() {
+      const isAdmin = localStorage.getItem("isAdmin") === "true";
+      const isUser = localStorage.getItem("isUser") === "true";
+      const loginStatus = document.getElementById("login-status");
+      if (isAdmin) loginStatus.textContent = "管理者ログイン中";
+      else if (isUser) loginStatus.textContent = "ログイン中";
+      else loginStatus.textContent = "未ログイン";
+
+      document.getElementById("user-login-btn").style.display = isAdmin || isUser ? "none" : "inline-block";
+      document.getElementById("user-password").style.display = isAdmin || isUser ? "none" : "inline-block";
+      document.getElementById("user-logout-btn").style.display = isAdmin || isUser ? "inline-block" : "none";
+    }
+
+    document.getElementById("user-login-btn").onclick = () => {
+      const pw = document.getElementById("user-password").value;
+      if (pw === "wakakusanagisa") {
+        localStorage.setItem("isAdmin", "true");
+        alert("管理者としてログインしました");
+      } else if (pw === "wakakusa") {
+        localStorage.setItem("isUser", "true");
+        alert("通常ユーザーとしてログインしました");
+      } else {
+        alert("パスワードが間違っています");
+        return;
+      }
+      updateLoginStatus();
+    };
+
+    document.getElementById("user-logout-btn").onclick = () => {
+      localStorage.removeItem("isAdmin");
+      localStorage.removeItem("isUser");
+      alert("ログアウトしました");
+      updateLoginStatus();
+    };
+
+    async function loadBoards() {
+      const tabEl = document.getElementById("board-tabs");
+      const { data, error } = await supabase.from("boards").select("*");
+      if (error || !data) {
+        tabEl.textContent = "板情報の読み込み失敗";
+        return;
+      }
+      tabEl.innerHTML = '';
+      data.forEach(board => {
+        const btn = document.createElement("button");
+        btn.textContent = board.name;
+        btn.onclick = () => {
+          currentBoard = board.slug;
+          loadThreads();
+        };
+        tabEl.appendChild(btn);
+      });
+      if (data.length > 0) {
+        currentBoard = data[0].slug;
+        loadThreads();
+      }
+    }
+
+    async function loadThreads() {
+      const { data, error } = await supabase
+        .from("threads")
+        .select("*")
+        .eq("board_slug", currentBoard)
+        .order("created_at", { ascending: false });
+
+      const container = document.getElementById("threads");
+      container.innerHTML = "";
+      if (data) {
+        data.forEach(thr => {
+          const div = document.createElement("div");
+          div.className = "thread";
+          div.innerHTML = `<a href="thread.html?id=${thr.id}">${thr.title}</a><br>${thr.body}`;
+          container.appendChild(div);
+        });
+      }
+    }
+
+    document.getElementById("thread-form").addEventListener("submit", async (e) => {
+      if (!(localStorage.getItem("isUser") === "true" || localStorage.getItem("isAdmin") === "true")) {
+        alert("ログインが必要です。先にログインしてください。");
+        return;
+      }
+      e.preventDefault();
+      const title = document.getElementById("title").value;
+      const body = document.getElementById("body").value;
+      const name = document.getElementById("name").value || "名無しさん";
+      const password = document.getElementById("password").value;
+      const imageFile = document.getElementById("thread-image").files[0];
+
+      let imageUrl = null;
+      if (imageFile) {
+        if (imageFile.size > 2 * 1024 * 1024) {
+          alert("画像は2MB以内にしてください。");
+          return;
+        }
+        const ext = imageFile.name.split(".").pop();
+        const fileName = `${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("post-images")
+          .upload(fileName, imageFile);
+
+        if (uploadErr) {
+          alert("画像のアップロードに失敗しました");
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("post-images")
+          .getPublicUrl(fileName);
+
+        imageUrl = publicUrlData.publicUrl;
+      }
+
+      const { error } = await supabase.from("threads").insert({
+        board_slug: currentBoard,
+        title, body, name, password, image_url: imageUrl
+      });
+      if (error) return alert("スレッド作成に失敗");
+      e.target.reset();
+      loadThreads();
+    });
+
+    loadBoards();
+    updateLoginStatus();
+  </script>
+</body>
+</html>
