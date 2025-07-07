@@ -8,6 +8,7 @@
     .thread { padding: 10px; background: #fff; margin: 10px 0; border: 1px solid #ccc; }
     #board-tabs button { margin: 0 5px; }
     #user-area { margin-bottom: 10px; }
+    input[type="file"] { margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -27,6 +28,7 @@
     <textarea id="body" placeholder="本文" required></textarea><br />
     <input type="text" id="name" placeholder="名前（省略可）" /><br />
     <input type="password" id="password" placeholder="削除用パスワード" required /><br />
+    <input type="file" id="thread-image" accept="image/*" /><br />
     <button type="submit">作成</button>
   </form>
 
@@ -126,11 +128,35 @@
       const body = document.getElementById("body").value;
       const name = document.getElementById("name").value || "名無しさん";
       const password = document.getElementById("password").value;
-      if (!currentBoard) return alert("板を選択してください");
+      const imageFile = document.getElementById("thread-image").files[0];
+
+      let imageUrl = null;
+      if (imageFile) {
+        if (imageFile.size > 2 * 1024 * 1024) {
+          alert("画像は2MB以内にしてください。");
+          return;
+        }
+        const ext = imageFile.name.split(".").pop();
+        const fileName = `${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("post-images")
+          .upload(fileName, imageFile);
+
+        if (uploadErr) {
+          alert("画像のアップロードに失敗しました");
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("post-images")
+          .getPublicUrl(fileName);
+
+        imageUrl = publicUrlData.publicUrl;
+      }
 
       const { error } = await supabase.from("threads").insert({
         board_slug: currentBoard,
-        title, body, name, password
+        title, body, name, password, image_url: imageUrl
       });
       if (error) return alert("スレッド作成に失敗");
       e.target.reset();
