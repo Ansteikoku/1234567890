@@ -7,11 +7,15 @@
     body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
     .comment { border: 1px solid #ccc; background: #fff; padding: 10px; margin: 10px 0; }
     img.comment-img { max-width: 200px; display: block; margin-top: 5px; cursor: pointer; }
+    button { margin-top: 10px; padding: 5px 10px; font-size: 14px; cursor: pointer; }
   </style>
 </head>
 <body>
   <h1 id="thread-title">スレッド</h1>
-  <div id="comments"></div>
+  <div id="thread-body"></div>
+
+  <!-- 読み込みボタン -->
+  <button id="load-thread-btn">スレッドを読み込む</button>
 
   <h2>コメントを投稿</h2>
   <form id="comment-form">
@@ -24,6 +28,12 @@
 
   <audio id="se" src="se.mp3" preload="auto"></audio>
 
+  <h2>コメント一覧</h2>
+  <div id="comments"></div>
+
+  <!-- コメント読み込みボタン -->
+  <button id="load-comments-btn">コメントを読み込む</button>
+
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
@@ -35,6 +45,7 @@
     const url = new URL(location.href);
     const threadId = url.searchParams.get("id");
 
+    // スレッドを読み込む関数
     async function loadThread() {
       const { data, error } = await supabase
         .from("threads")
@@ -43,9 +54,13 @@
         .single();
       if (data) {
         document.getElementById("thread-title").textContent = data.title;
+        document.getElementById("thread-body").innerHTML = data.body;
+      } else {
+        alert("スレッドの読み込みに失敗しました");
       }
     }
 
+    // コメントを読み込む関数
     async function loadComments() {
       const { data, error } = await supabase
         .from("comments")
@@ -55,6 +70,11 @@
 
       const container = document.getElementById("comments");
       container.innerHTML = "";
+
+      if (error) {
+        alert("コメントの読み込みに失敗しました");
+        return;
+      }
 
       data.forEach((cmt, idx) => {
         const div = document.createElement("div");
@@ -86,6 +106,7 @@
       });
     }
 
+    // コメント投稿フォーム
     document.getElementById("comment-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = document.getElementById("name").value;
@@ -133,8 +154,10 @@
       window.scrollTo(0, document.body.scrollHeight);
     });
 
-    loadThread();
-    loadComments();
+    // 読み込みボタンにイベントを追加
+    document.getElementById("load-thread-btn").addEventListener("click", loadThread);
+    document.getElementById("load-comments-btn").addEventListener("click", loadComments);
+
   </script>
 </body>
 </html>
